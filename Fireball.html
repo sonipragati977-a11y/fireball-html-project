@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>🔥 GROWING FIREBALL - Follows Your Fist</title>
+        <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: black;
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    
+    #camera-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      background: #1a1a1a;
+    }
+    
+    #camera-feed {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: block;
+    }
+    
+    #canvas-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 2;
+      pointer-events: none;
+    }
+    
+    #status-card {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 3;
+      background: rgba(0, 0, 0, 0.9);
+      border: 2px solid #ff6b00;
+      border-radius: 30px;
+      padding: 12px 24px;
+      color: white;
+      font-weight: bold;
+      font-size: 16px;
+      box-shadow: 0 0 20px #ff6b00;
+      backdrop-filter: blur(5px);
+    }
+    
+    #instruction-card {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      background: rgba(0, 0, 0, 0.9);
+      border: 2px solid #ffaa00;
+      border-radius: 60px;
+      padding: 15px 40px;
+      color: white;
+      font-size: 1.3rem;
+      font-weight: bold;
+      white-space: nowrap;
+      box-shadow: 0 0 30px #ffaa00;
+      text-shadow: 0 0 10px #ffaa00;
+      backdrop-filter: blur(5px);
+      border: 2px solid #ffaa00;
+    }
+    
+    #start-btn {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 4;
+      background: linear-gradient(45deg, #ff3300, #ff8800);
+      color: white;
+      border: none;
+      padding: 20px 50px;
+      font-size: 1.8rem;
+      font-weight: bold;
+      border-radius: 60px;
+      cursor: pointer;
+      box-shadow: 0 0 40px #ff6b00;
+      animation: pulse 2s infinite;
+      border: 2px solid #ffffaa;
+      text-shadow: 0 0 10px white;
+    }
+    
+    @keyframes pulse {
+      0% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.1); box-shadow: 0 0 60px #ffaa00; }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+    
+    #debug-panel {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 3;
+      background: rgba(0, 0, 0, 0.8);
+      border: 1px solid #00ff88;
+      border-radius: 10px;
+      padding: 15px;
+      color: #00ff88;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.8;
+      min-width: 280px;
+      backdrop-filter: blur(5px);
+    }
+        </style>
+    </head>
+    <body>
+        <div id="camera-container">
+            <video id="camera-feed" autoplay playsinline></video>
+        </div>
+        <canvas id="canvas-overlay"></canvas>
+        <div id="status-card">⏳ Ready to start</div>
+        <div id="instruction-card">👇 Click START to enable camera</div>
+        <button id="start-btn">🔥 START FIRE MAGIC 🔥</button>
+        <div id="debug-panel">
+            <div>🔍 FIREBALL DEBUG</div>
+            <div id="debug-hand">Hand: --</div>
+            <div id="debug-fist">Fist: --</div>
+            <div id="debug-charge">Charge: 0%</div>
+            <div id="debug-size">Fireball Size: 0.0x</div>
+            <div id="debug-position">Position: --</div>
+        </div>
+        <!-- Load libraries -->
+        <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+        <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.128.0/build/three.module.js"
+      }
+    }
+        </script>
+        <script type="module">
+    // Get elements
+    const video = document.getElementById('camera-feed');
+    const canvas = document.getElementById('canvas-overlay');
+    const statusCard = document.getElementById('status-card');
+    const instructionCard = document.getElementById('instruction-card');
+    const startBtn = document.getElementById('start-btn');
+    const debugHand = document.getElementById('debug-hand');
+    const debugFist = document.getElementById('debug-fist');
+    const debugCharge = document.getElementById('debug-charge');
+    const debugSize = document.getElementById('debug-size');
+    const debugPosition = document.getElementById('debug-position');
+    
+    // Import Three.js
+    import * as THREE from 'https://unpkg.com/three@0.128.0/build/three.module.js';
+    
+    // Three.js setup
+    const scene = new THREE.Scene();
+    scene.background = null;
+    
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1, 8);
+    camera.lookAt(0, 1, 0);
+    
+    const renderer = new THREE.WebGLRenderer({ 
+      canvas: canvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: "high-performance"
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    
+    // --- Create REALISTIC FIREBALL with multiple layers ---
+    const fireballGroup = new THREE.Group();
+    scene.add(fireballGroup);
+    
+    // 1. INTENSE CORE (white hot center)
+    const coreGeo = new THREE.SphereGeometry(0.25, 32, 32);
+    const coreMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0xffaa33,
+      emissiveIntensity: 3.0
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    fireballGroup.add(core);
+    
+    // 2. INNER FLAME (bright orange)
+    const innerFlameGeo = new THREE.SphereGeometry(0.4, 32, 32);
+    const innerFlameMat = new THREE.MeshStandardMaterial({
+      color: 0xff6600,
+      emissive: 0xff4400,
+      emissiveIntensity: 2.5,
+      transparent: true,
+      opacity: 0.9
+    });
+    const innerFlame = new THREE.Mesh(innerFlameGeo, innerFlameMat);
+    fireballGroup.add(innerFlame);
+    
+    // 3. MID FLAME (orange-red)
+    const midFlameGeo = new THREE.SphereGeometry(0.55, 32, 32);
+    const midFlameMat = new THREE.MeshStandardMaterial({
+      color: 0xff3300,
+      emissive: 0xff2200,
+      emissiveIntensity: 2.0,
+      transparent: true,
+      opacity: 0.7
+    });
+    const midFlame = new THREE.Mesh(midFlameGeo, midFlameMat);
+    fireballGroup.add(midFlame);
+    
+    // 4. OUTER FLAME (red with transparency)
+    const outerFlameGeo = new THREE.SphereGeometry(0.7, 32, 32);
+    const outerFlameMat = new THREE.MeshStandardMaterial({
+      color: 0xff2200,
+      emissive: 0xff1100,
+      emissiveIntensity: 1.5,
+      transparent: true,
+      opacity: 0.5
+    });
+    const outerFlame = new THREE.Mesh(outerFlameGeo, outerFlameMat);
+    fireballGroup.add(outerFlame);
+    
+    // 5. HEAT DISTORTION RING (pulsing torus)
+    const heatRingGeo = new THREE.TorusGeometry(0.8, 0.05, 32, 64);
+    const heatRingMat = new THREE.MeshBasicMaterial({
+      color: 0xff5500,
+      transparent: true,
+      opacity: 0.3,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+    const heatRing = new THREE.Mesh(heatRingGeo, heatRingMat);
+    heatRing.rotation.x = Math.PI / 2;
+    fireballGroup.add(heatRing);
+    
+    // 6. FLAME JETS (small spikes for realistic fire shape)
+    const jetCount = 12;
+    for (let i = 0; i < jetCount; i++) {
+      const angle = (i / jetCount) * Math.PI * 2;
+      const jetGeo = new THREE.ConeGeometry(0.1, 0.4, 8);
+      const jetMat = new THREE.MeshStandardMaterial({
+        color: 0xff8800,
+        emissive: 0xff5500,
+        emissiveIntensity: 2.0
+      });
+      const jet = new THREE.Mesh(jetGeo, jetMat);
+      jet.position.set(Math.cos(angle) * 0.6, Math.sin(angle) * 0.6, 0);
+      jet.rotation.z = angle;
+      jet.rotation.x = Math.PI / 2;
+      fireballGroup.add(jet);
+    }
+    
+    // 7. SPARK PARTICLES (hundreds of tiny glowing points)
+    const sparkCount = 200;
+    const sparkGeo = new THREE.BufferGeometry();
+    const sparkPositions = new Float32Array(sparkCount * 3);
+    const sparkColors = new Float32Array(sparkCount * 3);
+    
+    for (let i = 0; i < sparkCount; i++) {
+      const r = 0.4 + Math.random() * 0.5;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI * 2;
+      
+      sparkPositions[i*3] = Math.sin(theta) * Math.cos(phi) * r;
+      sparkPositions[i*3+1] = Math.sin(theta) * Math.sin(phi) * r;
+      sparkPositions[i*3+2] = Math.cos(theta) * r;
+      
+      sparkColors[i*3] = 1.0;
+      sparkColors[i*3+1] = 0.4 + Math.random() * 0.6;
+      sparkColors[i*3+2] = 0.0 + Math.random() * 0.2;
+    }
+    
+    sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+    sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkColors, 3));
+    
+    const sparkMat = new THREE.PointsMaterial({
+      size: 0.05,
+      vertexColors: true,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false
+    });
+    const sparks = new THREE.Points(sparkGeo, sparkMat);
+    fireballGroup.add(sparks);
+    
+    // 8. EXPLOSION PARTICLES SYSTEM
+    const explosionCount = 100;
+    const explosionParticles = [];
+    
+    function createExplosionTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      
+      const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gradient.addColorStop(0, 'rgba(255, 200, 100, 1)');
+      gradient.addColorStop(0.4, 'rgba(255, 100, 0, 0.8)');
+      gradient.addColorStop(0.7, 'rgba(200, 50, 0, 0.4)');
+      gradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 32, 32);
+      
+      return new THREE.CanvasTexture(canvas);
+    }
+    
+    const explosionTexture = createExplosionTexture();
+    
+    for (let i = 0; i < explosionCount; i++) {
+      const explosionMat = new THREE.SpriteMaterial({
+        map: explosionTexture,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false
+      });
+      const explosion = new THREE.Sprite(explosionMat);
+      explosion.scale.set(0.2, 0.2, 1);
+      explosion.visible = false;
+      scene.add(explosion);
+      
+      explosionParticles.push({
+        sprite: explosion,
+        active: false,
+        life: 0,
+        maxLife: 1.0,
+        velocity: new THREE.Vector3(),
+        position: new THREE.Vector3()
+      });
+    }
+    
+    // 9. SMOKE SYSTEM (for afterblast)
+    const smokeCount = 50;
+    const smokeParticles = [];
+    
+    function createSmokeTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      
+      const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gradient.addColorStop(0, 'rgba(200, 200, 200, 0.8)');
+      gradient.addColorStop(0.4, 'rgba(150, 150, 150, 0.6)');
+      gradient.addColorStop(0.7, 'rgba(100, 100, 100, 0.3)');
+      gradient.addColorStop(1, 'rgba(50, 50, 50, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 32, 32);
+      
+      return new THREE.CanvasTexture(canvas);
+    }
+    
+    const smokeTexture = createSmokeTexture();
+    
+    for (let i = 0; i < smokeCount; i++) {
+      const smokeMat = new THREE.SpriteMaterial({
+        map: smokeTexture,
+        blending: THREE.NormalBlending,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false
+      });
+      const smoke = new THREE.Sprite(smokeMat);
+      smoke.scale.set(0.4, 0.4, 1);
+      smoke.visible = false;
+      scene.add(smoke);
+      
+      smokeParticles.push({
+        sprite: smoke,
+        active: false,
+        life: 0,
+        maxLife: 2.0,
+        velocity: new THREE.Vector3(),
+        position: new THREE.Vector3()
+      });
+    }
+    
+    // Lights
+    const mainLight = new THREE.PointLight(0xff5500, 3, 15);
+    fireballGroup.add(mainLight);
+    
+    const fillLight = new THREE.PointLight(0xffaa33, 1, 10);
+    fireballGroup.add(fillLight);
+    
+    // Hide initially
+    fireballGroup.visible = false;
+    
+    // Variables
+    let palmPosition = new THREE.Vector3(0, 1, 0);
+    let previousPalmPosition = new THREE.Vector3(0, 1, 0);
+    let chargeLevel = 0;
+    let isFistDetected = false;
+    let wasFistDetected = false;
+    let handDetected = false;
+    let blastInProgress = false;
+    let fireballVisible = false;
+    let currentFireballSize = 0.3; // Base size
+    
+    // MediaPipe Hands
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    
+    hands.onResults((results) => {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        handDetected = true;
+        const landmarks = results.multiHandLandmarks[0];
+        
+        previousPalmPosition.copy(palmPosition);
+        
+        const wrist = landmarks[0];
+        
+        // Convert to world coordinates - THESE CONTROL FIREBALL POSITION
+        palmPosition.x = (wrist.x - 0.5) * 5;
+        palmPosition.y = -(wrist.y - 0.5) * 4 + 1;
+        palmPosition.z = -wrist.z * 4;
+        
+        // Fist detection
+        const tipIndices = [4, 8, 12, 16, 20];
+        let totalDistance = 0;
+        
+        tipIndices.forEach(index => {
+          const tip = landmarks[index];
+          const dx = tip.x - wrist.x;
+          const dy = tip.y - wrist.y;
+          totalDistance += Math.sqrt(dx*dx + dy*dy);
+        });
+        
+        const avgDistance = totalDistance / tipIndices.length;
+        wasFistDetected = isFistDetected;
+        isFistDetected = avgDistance < 0.13;
+        
+        // FIREBALL LOGIC:
+        if (isFistDetected && !blastInProgress) {
+          // FIST IS CLOSED - Show fireball and make it grow
+          fireballGroup.visible = true;
+          fireballVisible = true;
+          
+          // Update fireball position to follow fist - EVERY FRAME
+          fireballGroup.position.copy(palmPosition);
+          
+          // MAKE FIREBALL GROW CONTINUOUSLY while fist is closed
+          chargeLevel = Math.min(1, chargeLevel + 0.015); // Max 100%
+          
+          // Calculate size based on charge (minimum 0.4, maximum 1.8)
+          currentFireballSize = 0.4 + chargeLevel * 1.4;
+        } 
+        else if (!isFistDetected && !blastInProgress) {
+          // FIST IS OPEN - Check for blast
+          if (wasFistDetected && chargeLevel > 0.2) {
+            triggerBlast();
+          }
+          
+          // Gradually decrease charge when fist is open
+          chargeLevel = Math.max(0, chargeLevel - 0.01);
+          
+          // Hide fireball if charge is very low or zero
+          if (chargeLevel < 0.05) {
+            fireballGroup.visible = false;
+            fireballVisible = false;
+          } else {
+            // If still some charge, keep fireball visible but smaller
+            fireballGroup.visible = true;
+            fireballGroup.position.copy(palmPosition);
+            currentFireballSize = 0.4 + chargeLevel * 1.4;
+          }
+        }
+        
+        // Update debug
+        debugHand.innerHTML = `Hand: ✅ Detected`;
+        debugFist.innerHTML = `Fist: ${isFistDetected ? '✅ CLOSED' : '⭕ OPEN'}`;
+        debugCharge.innerHTML = `Charge: ${Math.round(chargeLevel * 100)}%`;
+        debugSize.innerHTML = `Fireball Size: ${currentFireballSize.toFixed(2)}x`;
+        debugPosition.innerHTML = `Position: X:${palmPosition.x.toFixed(2)} Y:${palmPosition.y.toFixed(2)} Z:${palmPosition.z.toFixed(2)}`;
+        
+      } else {
+        handDetected = false;
+        debugHand.innerHTML = `Hand: ❌ Not detected`;
+        isFistDetected = false;
+        wasFistDetected = false;
+        
+        if (!blastInProgress) {
+          fireballGroup.visible = false;
+          fireballVisible = false;
+          chargeLevel = Math.max(0, chargeLevel - 0.01);
+        }
+      }
+    });
+    
+    // Blast function
+    function triggerBlast() {
+      blastInProgress = true;
+      
+      // Get current fireball position for explosion
+      const blastPosition = fireballGroup.position.clone();
+      
+      // Hide fireball
+      fireballGroup.visible = false;
+      fireballVisible = false;
+      
+      // Epic blast effect based on charge level
+      createExplosion(blastPosition, chargeLevel);
+      
+      // Screen flash based on charge level
+      const flashIntensity = 0.3 + chargeLevel * 0.5;
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          const flash = document.createElement('div');
+          flash.style.position = 'fixed';
+          flash.style.top = '0';
+          flash.style.left = '0';
+          flash.style.width = '100%';
+          flash.style.height = '100%';
+          flash.style.background = `radial-gradient(circle at ${50 + (Math.random()*30-15)}% ${50 + (Math.random()*30-15)}%, #ffaa33, #ff3300)`;
+          flash.style.opacity = flashIntensity.toString();
+          flash.style.zIndex = '10';
+          flash.style.pointerEvents = 'none';
+          flash.style.mixBlendMode = 'overlay';
+          document.body.appendChild(flash);
+          setTimeout(() => flash.remove(), 100);
+        }, i * 20);
+      }
+      
+      // Camera shake effect
+      shakeCamera(chargeLevel * 0.5);
+      
+      // Explosion sound
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Bass boom
+        const boom = audioCtx.createOscillator();
+        const boomGain = audioCtx.createGain();
+        boom.type = 'sine';
+        boom.frequency.value = 80;
+        boomGain.gain.value = 0.3 * chargeLevel;
+        boomGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        boom.connect(boomGain);
+        boomGain.connect(audioCtx.destination);
+        boom.start();
+        boom.stop(audioCtx.currentTime + 0.5);
+        
+        // High frequency crackle
+        const crackle = audioCtx.createOscillator();
+        const crackleGain = audioCtx.createGain();
+        crackle.type = 'sawtooth';
+        crackle.frequency.value = 300;
+        crackleGain.gain.value = 0.1 * chargeLevel;
+        crackleGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        crackle.connect(crackleGain);
+        crackleGain.connect(audioCtx.destination);
+        crackle.start();
+        crackle.stop(audioCtx.currentTime + 0.3);
+        
+      } catch(e) {
+        console.log('Audio not supported');
+      }
+      
+      // Reset after blast
+      setTimeout(() => {
+        blastInProgress = false;
+      }, 1000);
+      
+      // Reset charge
+      chargeLevel = 0;
+      currentFireballSize = 0.3;
+      
+      console.log('💥 BLAST TRIGGERED! Power:', chargeLevel);
+    }
+    
+    // Camera shake function
+    function shakeCamera(intensity) {
+      const originalX = camera.position.x;
+      const originalY = camera.position.y;
+      const startTime = performance.now();
+      
+      function shake() {
+        const elapsed = performance.now() - startTime;
+        if (elapsed < 300) {
+          const factor = (1 - elapsed / 300) * intensity;
+          camera.position.x = originalX + (Math.random() - 0.5) * factor;
+          camera.position.y = originalY + (Math.random() - 0.5) * factor;
+          requestAnimationFrame(shake);
+        } else {
+          camera.position.x = originalX;
+          camera.position.y = originalY;
+        }
+      }
+      
+      shake();
+    }
+    
+    // Start camera
+    async function startCamera() {
+      try {
+        statusCard.innerHTML = '📷 Requesting camera...';
+        startBtn.style.display = 'none';
+        instructionCard.innerHTML = '⏳ Please wait...';
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: 'user'
+          } 
+        });
+        
+        video.srcObject = stream;
+        
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => {
+            video.play();
+            resolve();
+          };
+        });
+        
+        statusCard.innerHTML = '✅ Camera active';
+        instructionCard.innerHTML = '✋ CLOSE FIST → Fireball appears & grows → OPEN to BLAST!';
+        
+        async function processFrame() {
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            await hands.send({ image: video });
+          }
+          requestAnimationFrame(processFrame);
+        }
+        
+        processFrame();
+        
+      } catch (error) {
+        console.error('Camera error:', error);
+        statusCard.innerHTML = '❌ Camera error';
+        instructionCard.innerHTML = 'Error: ' + error.message;
+        startBtn.style.display = 'block';
+      }
+    }
+    
+    startBtn.addEventListener('click', startCamera);
+    
+    // Animation loop
+    let lastTime = performance.now() / 1000;
+    let flameTime = 0;
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      const currentTime = performance.now() / 1000;
+      const deltaTime = Math.min(0.1, currentTime - lastTime);
+      lastTime = currentTime;
+      flameTime += deltaTime;
+      
+      // Update fireball animation if visible
+      if (fireballGroup.visible) {
+        // CRITICAL: Update position every frame to follow fist
+        // This ensures smooth following even if hand tracking updates at different rate
+        fireballGroup.position.copy(palmPosition);
+        
+        // Apply the current size (grows as charge increases)
+        fireballGroup.scale.set(currentFireballSize, currentFireballSize, currentFireballSize);
+        
+        // Add extra pulsing effect based on charge
+        const pulseAmount = 0.1 * chargeLevel;
+        const pulse = 1 + Math.sin(flameTime * (15 + chargeLevel * 20)) * pulseAmount;
+        fireballGroup.scale.multiplyScalar(pulse);
+        
+        // Rotate fireball for dynamic effect
+        fireballGroup.rotation.y += 3 * deltaTime;
+        fireballGroup.rotation.x += 1.5 * deltaTime;
+        
+        // Heat ring pulse
+        heatRing.scale.set(1 + Math.sin(flameTime * 20) * 0.2, 1 + Math.sin(flameTime * 20) * 0.2, 1);
+        heatRing.material.opacity = 0.2 + Math.sin(flameTime * 30) * 0.1;
+        
+        // Spark animation
+        sparks.rotation.y += 2 * deltaTime;
+        sparks.rotation.x += 1 * deltaTime;
+      }
+      
+      // Update explosion particles
+      explosionParticles.forEach(particle => {
+        if (particle.active) {
+          particle.life -= deltaTime;
+          
+          // Move particle
+          particle.sprite.position.x += particle.velocity.x * deltaTime;
+          particle.sprite.position.y += particle.velocity.y * deltaTime;
+          particle.sprite.position.z += particle.velocity.z * deltaTime;
+          
+          // Scale and fade
+          const lifeFactor = particle.life / particle.maxLife;
+          const scale = 0.2 + (1 - lifeFactor) * 0.5;
+          particle.sprite.scale.set(scale, scale, 1);
+          particle.sprite.material.opacity = lifeFactor;
+          
+          if (particle.life <= 0) {
+            particle.active = false;
+            particle.sprite.visible = false;
+          }
+        }
+      });
+      
+      // Update smoke particles
+      smokeParticles.forEach(particle => {
+        if (particle.active) {
+          particle.life -= deltaTime;
+          
+          // Move smoke
+          particle.sprite.position.x += particle.velocity.x * deltaTime;
+          particle.sprite.position.y += particle.velocity.y * deltaTime;
+          particle.sprite.position.z += particle.velocity.z * deltaTime;
+          
+          // Grow and fade
+          const lifeFactor = particle.life / particle.maxLife;
+          particle.sprite.scale.set(0.4 + (1 - lifeFactor) * 0.6, 0.4 + (1 - lifeFactor) * 0.6, 1);
+          particle.sprite.material.opacity = lifeFactor * 0.5;
+          
+          if (particle.life <= 0) {
+            particle.active = false;
+            particle.sprite.visible = false;
+          }
+        }
+      });
+      
+      renderer.render(scene, camera);
+    }
+    
+    function createExplosion(position, power) {
+      const particleCount = 30 + Math.floor(power * 50);
+      
+      // Create explosion particles
+      for (let i = 0; i < particleCount; i++) {
+        const particle = explosionParticles.find(p => !p.active);
+        if (particle) {
+          particle.active = true;
+          particle.life = particle.maxLife = 0.8 + Math.random() * 0.5;
+          particle.sprite.position.copy(position);
+          
+          // Random direction
+          const angle1 = Math.random() * Math.PI * 2;
+          const angle2 = Math.random() * Math.PI * 2;
+          const speed = (0.5 + Math.random() * 1.5) * (0.5 + power * 0.5);
+          
+          particle.velocity.set(
+            Math.sin(angle1) * Math.cos(angle2) * speed,
+            Math.sin(angle1) * Math.sin(angle2) * speed,
+            Math.cos(angle1) * speed
+          );
+          
+          // Color based on power
+          const r = 1.0;
+          const g = 0.3 + Math.random() * 0.7;
+          const b = 0.0;
+          particle.sprite.material.color.setRGB(r, g, b);
+          
+          particle.sprite.material.opacity = 0.9;
+          particle.sprite.scale.set(0.2, 0.2, 1);
+          particle.sprite.visible = true;
+        }
+      }
+      
+      // Create smoke cloud
+      for (let i = 0; i < 15; i++) {
+        setTimeout(() => {
+          const particle = smokeParticles.find(p => !p.active);
+          if (particle) {
+            particle.active = true;
+            particle.life = particle.maxLife = 1.5 + Math.random() * 1;
+            particle.sprite.position.copy(position);
+            particle.sprite.position.x += (Math.random() - 0.5) * 0.5;
+            particle.sprite.position.y += (Math.random() - 0.5) * 0.5;
+            particle.sprite.position.z += (Math.random() - 0.5) * 0.5;
+            
+            particle.velocity.set(
+              (Math.random() - 0.5) * 0.3,
+              Math.random() * 0.2 + 0.1,
+              (Math.random() - 0.5) * 0.2
+            );
+            
+            particle.sprite.material.opacity = 0.6;
+            particle.sprite.scale.set(0.4, 0.4, 1);
+            particle.sprite.visible = true;
+          }
+        }, i * 30);
+      }
+    }
+    
+    animate();
+    
+    // Handle resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+        </script>
+    </body>
+</html>
